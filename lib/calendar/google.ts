@@ -2,6 +2,9 @@ import { google } from "googleapis";
 import { randomBytes, createCipheriv, createDecipheriv } from "crypto";
 import { prisma } from "@/lib/db";
 
+// Meeting link creation is handled separately via the Google Meet REST API,
+// not through Calendar event conferenceData. This module only syncs busy
+// times and writes plain calendar events.
 const SCOPES = [
   "https://www.googleapis.com/auth/calendar.readonly",
   "https://www.googleapis.com/auth/calendar.events",
@@ -41,19 +44,19 @@ export function decrypt(encryptedText: string): string {
   return decrypted;
 }
 
-export function getGoogleAuthUrl(userId: string): string {
+export function getGoogleAuthUrl(personId: number): string {
   const oauth2Client = getOAuth2Client();
   return oauth2Client.generateAuthUrl({
     access_type: "offline",
     scope: SCOPES,
     prompt: "consent",
-    state: userId,
+    state: String(personId),
   });
 }
 
 export async function handleGoogleCallback(
   code: string,
-  userId: string
+  personId: number
 ): Promise<void> {
   const oauth2Client = getOAuth2Client();
   const { tokens } = await oauth2Client.getToken(code);
@@ -62,51 +65,40 @@ export async function handleGoogleCallback(
     throw new Error("No access token received");
   }
 
-  // Get user's email from the token
+  // Get the connected account's primary calendar id (their email)
   oauth2Client.setCredentials(tokens);
   const calendar = google.calendar({ version: "v3", auth: oauth2Client });
   const calendarList = await calendar.calendarList.list();
   const primaryCalendar = calendarList.data.items?.find((c) => c.primary);
-  const email = primaryCalendar?.id ?? undefined;
+  const calendarId = primaryCalendar?.id ?? undefined;
 
-  await prisma.calendarConnection.upsert({
-    where: {
-      userId_provider: { userId, provider: "GOOGLE" },
-    },
+  await prisma.googleCalendarConnection.upsert({
+    where: { person_id: personId },
     update: {
-      accessToken: encrypt(tokens.access_token),
-      refreshToken: tokens.refresh_token
+      access_token: encrypt(tokens.access_token),
+      refresh_token: tokens.refresh_token
         ? encrypt(tokens.refresh_token)
         : undefined,
-      expiresAt: tokens.expiry_date
+      expires_at: tokens.expiry_date
         ? new Date(tokens.expiry_date)
         : undefined,
-      email,
-      calendarId: email,
-      isPrimary: true,
+      calendar_id: calendarId,
     },
     create: {
-      userId,
-      provider: "GOOGLE",
-      accessToken: encrypt(tokens.access_token),
-      refreshToken: tokens.refresh_token
+      person_id: personId,
+      access_token: encrypt(tokens.access_token),
+      refresh_token: tokens.refresh_token
         ? encrypt(tokens.refresh_token)
         : null,
-      expiresAt: tokens.expiry_date
-        ? new Date(tokens.expiry_date)
-        : null,
-      email,
-      calendarId: email,
-      isPrimary: true,
+      expires_at: tokens.expiry_date ? new Date(tokens.expiry_date) : null,
+      calendar_id: calendarId,
     },
   });
 }
 
-export async function getGoogleCalendarClient(userId: string) {
-  const connection = await prisma.calendarConnection.findUnique({
-    where: {
-      userId_provider: { userId, provider: "GOOGLE" },
-    },
+export async function getGoogleCalendarClient(personId: number) {
+  const connection = await prisma.googleCalendarConnection.findUnique({
+    where: { person_id: personId },
   });
 
   if (!connection) {
@@ -115,29 +107,33 @@ export async function getGoogleCalendarClient(userId: string) {
 
   const oauth2Client = getOAuth2Client();
   oauth2Client.setCredentials({
-    access_token: decrypt(connection.accessToken),
-    refresh_token: connection.refreshToken
-      ? decrypt(connection.refreshToken)
+    access_token: decrypt(connection.access_token),
+    refresh_token: connection.refresh_token
+      ? decrypt(connection.refresh_token)
       : undefined,
-    expiry_date: connection.expiresAt?.getTime(),
+    expiry_date: connection.expires_at?.getTime(),
   });
 
   // Handle token refresh
   oauth2Client.on("tokens", async (tokens) => {
-    const updateData: any = {};
+    const updateData: {
+      access_token?: string;
+      refresh_token?: string;
+      expires_at?: Date;
+    } = {};
     if (tokens.access_token) {
-      updateData.accessToken = encrypt(tokens.access_token);
+      updateData.access_token = encrypt(tokens.access_token);
     }
     if (tokens.refresh_token) {
-      updateData.refreshToken = encrypt(tokens.refresh_token);
+      updateData.refresh_token = encrypt(tokens.refresh_token);
     }
     if (tokens.expiry_date) {
-      updateData.expiresAt = new Date(tokens.expiry_date);
+      updateData.expires_at = new Date(tokens.expiry_date);
     }
 
     if (Object.keys(updateData).length > 0) {
-      await prisma.calendarConnection.update({
-        where: { id: connection.id },
+      await prisma.googleCalendarConnection.update({
+        where: { connection_id: connection.connection_id },
         data: updateData,
       });
     }
@@ -147,28 +143,27 @@ export async function getGoogleCalendarClient(userId: string) {
 }
 
 export async function getBusyTimes(
-  userId: string,
+  personId: number,
   startDate: Date,
   endDate: Date
 ): Promise<{ start: Date; end: Date }[]> {
   try {
-    const calendar = await getGoogleCalendarClient(userId);
-    const connection = await prisma.calendarConnection.findUnique({
-      where: { userId_provider: { userId, provider: "GOOGLE" } },
+    const calendar = await getGoogleCalendarClient(personId);
+    const connection = await prisma.googleCalendarConnection.findUnique({
+      where: { person_id: personId },
     });
 
-    if (!connection?.calendarId) return [];
+    if (!connection?.calendar_id) return [];
 
     const response = await calendar.freebusy.query({
       requestBody: {
         timeMin: startDate.toISOString(),
         timeMax: endDate.toISOString(),
-        items: [{ id: connection.calendarId }],
+        items: [{ id: connection.calendar_id }],
       },
     });
 
-    const busy =
-      response.data.calendars?.[connection.calendarId]?.busy ?? [];
+    const busy = response.data.calendars?.[connection.calendar_id]?.busy ?? [];
 
     return busy
       .filter((b) => b.start && b.end)
@@ -189,23 +184,29 @@ interface CalendarEventInput {
   endTime: Date;
   attendeeEmail: string;
   additionalAttendees?: { email: string }[];
-  location?: string;
-  createMeetLink?: boolean;
+  // Pre-created Google Meet link from the Meet REST API integration, if any.
+  meetingUrl?: string;
 }
 
 export interface CalendarEventResult {
   eventId: string;
-  meetLink?: string;
 }
 
 export async function createCalendarEvent(
-  userId: string,
+  personId: number,
   event: CalendarEventInput
 ): Promise<CalendarEventResult | null> {
   try {
-    const calendar = await getGoogleCalendarClient(userId);
+    const calendar = await getGoogleCalendarClient(personId);
 
-    const eventData: any = {
+    const eventData: {
+      summary: string;
+      description?: string;
+      start: { dateTime: string; timeZone: string };
+      end: { dateTime: string; timeZone: string };
+      attendees: { email: string }[];
+      location?: string;
+    } = {
       summary: event.summary,
       description: event.description,
       start: {
@@ -222,32 +223,19 @@ export async function createCalendarEvent(
       ],
     };
 
-    if (event.location) {
-      eventData.location = event.location;
-    }
-
-    if (event.createMeetLink) {
-      eventData.conferenceData = {
-        createRequest: {
-          requestId: `gudcal-${Date.now()}`,
-          conferenceSolutionKey: { type: "hangoutsMeet" },
-        },
-      };
+    if (event.meetingUrl) {
+      eventData.location = event.meetingUrl;
     }
 
     const response = await calendar.events.insert({
       calendarId: "primary",
       requestBody: eventData,
-      conferenceDataVersion: event.createMeetLink ? 1 : 0,
       sendUpdates: "all",
     });
 
     if (!response.data.id) return null;
 
-    return {
-      eventId: response.data.id,
-      meetLink: response.data.hangoutLink ?? undefined,
-    };
+    return { eventId: response.data.id };
   } catch (error) {
     console.error("Error creating calendar event:", error);
     return null;
@@ -255,14 +243,19 @@ export async function createCalendarEvent(
 }
 
 export async function updateCalendarEvent(
-  userId: string,
+  personId: number,
   eventId: string,
   event: Partial<CalendarEventInput>
 ): Promise<boolean> {
   try {
-    const calendar = await getGoogleCalendarClient(userId);
+    const calendar = await getGoogleCalendarClient(personId);
 
-    const updateData: any = {};
+    const updateData: {
+      summary?: string;
+      description?: string;
+      start?: { dateTime: string; timeZone: string };
+      end?: { dateTime: string; timeZone: string };
+    } = {};
     if (event.summary) updateData.summary = event.summary;
     if (event.description) updateData.description = event.description;
     if (event.startTime) {
@@ -293,11 +286,11 @@ export async function updateCalendarEvent(
 }
 
 export async function deleteCalendarEvent(
-  userId: string,
+  personId: number,
   eventId: string
 ): Promise<boolean> {
   try {
-    const calendar = await getGoogleCalendarClient(userId);
+    const calendar = await getGoogleCalendarClient(personId);
 
     await calendar.events.delete({
       calendarId: "primary",
@@ -309,109 +302,5 @@ export async function deleteCalendarEvent(
   } catch (error) {
     console.error("Error deleting calendar event:", error);
     return false;
-  }
-}
-
-export async function disconnectGoogleCalendar(userId: string): Promise<void> {
-  await prisma.calendarConnection.deleteMany({
-    where: { userId, provider: "GOOGLE" },
-  });
-}
-
-/**
- * Helper: parse additionalGuests JSON into { email } array for calendar attendees.
- */
-function parseAdditionalAttendees(
-  additionalGuests: unknown,
-): { email: string }[] {
-  if (!additionalGuests || !Array.isArray(additionalGuests)) return [];
-  return additionalGuests
-    .filter(
-      (g): g is { email: string } =>
-        typeof g === "object" &&
-        g !== null &&
-        "email" in g &&
-        typeof (g as any).email === "string",
-    )
-    .map((g) => ({ email: g.email }));
-}
-
-/**
- * Create a Google Calendar event for a booking and update the booking record
- * with the googleEventId (and Meet link if applicable).
- *
- * Returns { googleEventId, meetLink } if successful, or null if the host has
- * no Google Calendar connection or creation failed.
- */
-export async function createCalendarEventForBooking(
-  hostUserId: string,
-  booking: {
-    id: string;
-    startTime: Date;
-    endTime: Date;
-    guestName: string;
-    guestEmail: string;
-    location?: string | null;
-    notes?: string | null;
-    additionalGuests?: unknown;
-  },
-  eventType: {
-    title: string;
-    locationType: string;
-  },
-): Promise<{ googleEventId: string; meetLink?: string } | null> {
-  try {
-    const isGoogleMeet = eventType.locationType === "GOOGLE_MEET";
-
-    const result = await createCalendarEvent(hostUserId, {
-      summary: `${eventType.title} with ${booking.guestName}`,
-      description: booking.notes ?? undefined,
-      startTime: booking.startTime,
-      endTime: booking.endTime,
-      attendeeEmail: booking.guestEmail,
-      additionalAttendees: parseAdditionalAttendees(booking.additionalGuests),
-      location: booking.location ?? undefined,
-      createMeetLink: isGoogleMeet,
-    });
-
-    if (!result) return null;
-
-    // Update booking with googleEventId (and Meet link as location)
-    const updateData: { googleEventId: string; location?: string } = {
-      googleEventId: result.eventId,
-    };
-
-    if (isGoogleMeet && result.meetLink) {
-      updateData.location = result.meetLink;
-    }
-
-    await prisma.booking.update({
-      where: { id: booking.id },
-      data: updateData,
-    });
-
-    return {
-      googleEventId: result.eventId,
-      meetLink: result.meetLink,
-    };
-  } catch (error) {
-    console.error("Error creating calendar event for booking:", error);
-    return null;
-  }
-}
-
-/**
- * Delete the Google Calendar event associated with a booking (if any).
- */
-export async function deleteCalendarEventForBooking(
-  hostUserId: string,
-  googleEventId: string | null,
-): Promise<void> {
-  if (!googleEventId) return;
-
-  try {
-    await deleteCalendarEvent(hostUserId, googleEventId);
-  } catch (error) {
-    console.error("Error deleting calendar event for booking:", error);
   }
 }

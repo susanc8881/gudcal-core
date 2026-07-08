@@ -8,17 +8,13 @@ import { disconnectCalendar } from "@/actions/integrations";
 import { Button } from "@/components/ui/button";
 import { Icons } from "@/components/shared/icons";
 
-interface DisconnectCalendarButtonProps {
-  provider: "GOOGLE" | "OUTLOOK";
-}
-
-export function DisconnectCalendarButton({ provider }: DisconnectCalendarButtonProps) {
+export function DisconnectCalendarButton() {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
   const handleDisconnect = () => {
     startTransition(async () => {
-      const result = await disconnectCalendar(provider);
+      const result = await disconnectCalendar();
       if (result.status === "success") {
         toast.success("Calendar disconnected");
         router.refresh();

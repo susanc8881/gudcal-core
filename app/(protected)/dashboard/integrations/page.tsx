@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 
-import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
+import { getCurrentPersonId } from "@/lib/auth/current-person";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -19,12 +19,11 @@ export const metadata = {
 };
 
 export default async function IntegrationsPage() {
-  const session = await auth();
-  const userId = session?.user?.id;
-  if (!userId) redirect("/login");
+  const personId = await getCurrentPersonId();
+  if (!personId) redirect("/login");
 
-  const googleConnection = await prisma.calendarConnection.findUnique({
-    where: { userId_provider: { userId, provider: "GOOGLE" } },
+  const googleConnection = await prisma.googleCalendarConnection.findUnique({
+    where: { person_id: personId },
   });
 
   return (
@@ -49,13 +48,13 @@ export default async function IntegrationsPage() {
                   <CardTitle className="text-base">Google Calendar</CardTitle>
                   <CardDescription>
                     {googleConnection
-                      ? `Connected as ${googleConnection.email ?? "unknown"}`
+                      ? `Connected as ${googleConnection.calendar_id ?? "unknown"}`
                       : "Check for conflicts and create events automatically"}
                   </CardDescription>
                 </div>
               </div>
               {googleConnection ? (
-                <DisconnectCalendarButton provider="GOOGLE" />
+                <DisconnectCalendarButton />
               ) : (
                 <Button asChild>
                   <Link href="/api/calendar/google/connect">Connect</Link>

@@ -2,19 +2,18 @@
 
 import { revalidatePath } from "next/cache";
 
-import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
+import { getCurrentPersonId } from "@/lib/auth/current-person";
 
-export async function disconnectCalendar(provider: "GOOGLE" | "OUTLOOK") {
+export async function disconnectCalendar() {
   try {
-    const session = await auth();
-    const userId = session?.user?.id;
-    if (!userId) {
+    const personId = await getCurrentPersonId();
+    if (!personId) {
       return { status: "error" as const, message: "Not authenticated" };
     }
 
-    await prisma.calendarConnection.deleteMany({
-      where: { userId, provider },
+    await prisma.googleCalendarConnection.deleteMany({
+      where: { person_id: personId },
     });
 
     revalidatePath("/dashboard/integrations");

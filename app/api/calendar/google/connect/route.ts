@@ -1,15 +1,14 @@
 import { redirect } from "next/navigation";
-import { auth } from "@/auth";
 import { getGoogleAuthUrl } from "@/lib/calendar/google";
+import { getCurrentPersonId } from "@/lib/auth/current-person";
 
 export async function GET() {
-  const session = await auth();
-  const userId = session?.user?.id;
+  const personId = await getCurrentPersonId();
 
-  if (!userId) {
+  if (!personId) {
     redirect("/login");
   }
 
-  const authUrl = getGoogleAuthUrl(userId);
+  const authUrl = getGoogleAuthUrl(personId);
   redirect(authUrl);
 }

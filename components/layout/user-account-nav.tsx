@@ -2,8 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { LayoutDashboard, Lock, LogOut, Settings } from "lucide-react";
-import { signOut, useSession } from "next-auth/react";
+import { LayoutDashboard } from "lucide-react";
 import { Drawer } from "vaul";
 
 import { useMediaQuery } from "@/hooks/use-media-query";
@@ -16,9 +15,22 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { UserAvatar } from "@/components/shared/user-avatar";
 
+interface CurrentUser {
+  name?: string | null;
+  email?: string | null;
+  image?: string | null;
+}
+
+// No working session source exists yet (NextAuth's tables are gone; Clerk
+// isn't wired up - see lib/auth/current-person.ts). This always renders the
+// loading skeleton, which matches reality: there is no logged-in user to
+// show. Swap for Clerk's useUser() once it's installed.
+function useCurrentUser(): CurrentUser | null {
+  return null;
+}
+
 export function UserAccountNav() {
-  const { data: session } = useSession();
-  const user = session?.user;
+  const user = useCurrentUser();
 
   const [open, setOpen] = useState(false);
   const closeDrawer = () => {
@@ -63,54 +75,15 @@ export function UserAccountNav() {
             </div>
 
             <ul role="list" className="mb-14 mt-1 w-full text-muted-foreground">
-              {user.role === "ADMIN" ? (
-                <li className="rounded-lg text-foreground hover:bg-muted">
-                  <Link
-                    href="/admin"
-                    onClick={closeDrawer}
-                    className="flex w-full items-center gap-3 px-2.5 py-2"
-                  >
-                    <Lock className="size-4" />
-                    <p className="text-sm">Admin</p>
-                  </Link>
-                </li>
-              ) : null}
-
               <li className="rounded-lg text-foreground hover:bg-muted">
                 <Link
-                  href="/dashboard"
+                  href="/dashboard/integrations"
                   onClick={closeDrawer}
                   className="flex w-full items-center gap-3 px-2.5 py-2"
                 >
                   <LayoutDashboard className="size-4" />
                   <p className="text-sm">Dashboard</p>
                 </Link>
-              </li>
-
-              <li className="rounded-lg text-foreground hover:bg-muted">
-                <Link
-                  href="/dashboard/settings"
-                  onClick={closeDrawer}
-                  className="flex w-full items-center gap-3 px-2.5 py-2"
-                >
-                  <Settings className="size-4" />
-                  <p className="text-sm">Settings</p>
-                </Link>
-              </li>
-
-              <li
-                className="rounded-lg text-foreground hover:bg-muted"
-                onClick={(event) => {
-                  event.preventDefault();
-                  signOut({
-                    callbackUrl: `${window.location.origin}/`,
-                  });
-                }}
-              >
-                <div className="flex w-full items-center gap-3 px-2.5 py-2">
-                  <LogOut className="size-4" />
-                  <p className="text-sm">Log out </p>
-                </div>
               </li>
             </ul>
           </Drawer.Content>
@@ -141,45 +114,14 @@ export function UserAccountNav() {
         </div>
         <DropdownMenuSeparator />
 
-        {user.role === "ADMIN" ? (
-          <DropdownMenuItem asChild>
-            <Link href="/admin" className="flex items-center space-x-2.5">
-              <Lock className="size-4" />
-              <p className="text-sm">Admin</p>
-            </Link>
-          </DropdownMenuItem>
-        ) : null}
-
         <DropdownMenuItem asChild>
-          <Link href="/dashboard" className="flex items-center space-x-2.5">
+          <Link
+            href="/dashboard/integrations"
+            className="flex items-center space-x-2.5"
+          >
             <LayoutDashboard className="size-4" />
             <p className="text-sm">Dashboard</p>
           </Link>
-        </DropdownMenuItem>
-
-        <DropdownMenuItem asChild>
-          <Link
-            href="/dashboard/settings"
-            className="flex items-center space-x-2.5"
-          >
-            <Settings className="size-4" />
-            <p className="text-sm">Settings</p>
-          </Link>
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          className="cursor-pointer"
-          onSelect={(event) => {
-            event.preventDefault();
-            signOut({
-              callbackUrl: `${window.location.origin}/`,
-            });
-          }}
-        >
-          <div className="flex items-center space-x-2.5">
-            <LogOut className="size-4" />
-            <p className="text-sm">Log out </p>
-          </div>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

@@ -18,7 +18,7 @@ export default function OpenSourceCta() {
         </p>
         <div className="mt-8 flex flex-wrap justify-center gap-3">
           <Link
-            href="/register"
+            href="/"
             className={cn(
               buttonVariants({ rounded: "xl", size: "lg" }),
               "gap-2 px-6",

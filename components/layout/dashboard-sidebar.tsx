@@ -19,7 +19,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import EventTypeSwitcher from "@/components/dashboard/event-type-switcher";
 import { Icons } from "@/components/shared/icons";
 
 interface DashboardSidebarProps {
@@ -71,8 +70,6 @@ export function DashboardSidebar({ links }: DashboardSidebarProps) {
           >
             <div className="flex h-full max-h-screen flex-1 flex-col gap-2">
               <div className="flex h-14 items-center p-4 lg:h-[60px]">
-                {isSidebarExpanded ? <EventTypeSwitcher /> : null}
-
                 <Button
                   variant="ghost"
                   size="icon"
@@ -207,8 +204,6 @@ export function MobileSheetSidebar({ links }: DashboardSidebarProps) {
                     {siteConfig.name}
                   </span>
                 </Link>
-
-                <EventTypeSwitcher large />
 
                 {links.map((section) => (
                   <section
