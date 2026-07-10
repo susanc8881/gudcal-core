@@ -192,7 +192,7 @@ export default function AlternativePage({
             <Icons.arrowRight className="size-4" />
           </Link>
           <Link
-            href="https://github.com/gudlab/gudcal-core"
+            href="https://github.com/susanc8881/gudcal-core"
             target="_blank"
             rel="noreferrer"
             className={cn(

@@ -43,6 +43,40 @@ model Assignment {
   Document         Document @relation(fields: [document_id], references: [document_id])
 }
 
+// One recurring weekly schedule per person. Only students, advisors, and
+// tutors use this today -- admins have no sessions to be available for.
+model Availability {
+  availability_id  Int                @id @default(autoincrement())
+  person_id        Int                @unique
+  timezone         String             @default("America/New_York")
+  AvailabilityRule AvailabilityRule[]
+  DateOverride     DateOverride[]
+  Person           Person             @relation(fields: [person_id], references: [person_id])
+}
+
+model AvailabilityRule {
+  availability_rule_id Int          @id @default(autoincrement())
+  availability_id      Int
+  day_of_week          Int
+  start_time           String
+  end_time             String
+  Availability         Availability @relation(fields: [availability_id], references: [availability_id], onDelete: Cascade)
+
+  @@index([availability_id])
+}
+
+model DateOverride {
+  date_override_id Int          @id @default(autoincrement())
+  availability_id  Int
+  date             DateTime     @db.Date
+  start_time       String?
+  end_time         String?
+  is_blocked       Boolean      @default(false)
+  Availability     Availability @relation(fields: [availability_id], references: [availability_id], onDelete: Cascade)
+
+  @@index([availability_id])
+}
+
 model Document {
   document_id       Int                @id @default(autoincrement())
   person_id         Int
@@ -56,12 +90,29 @@ model Document {
   Test              Test?
 }
 
+// Infrastructure record for a session's Google Meet space -- the join/API
+// details. Kept separate from Session (core business logic: the tutoring
+// appointment, attendee, schedule, duration) so the Google Meet integration
+// can be swapped out later without touching scheduling logic.
+model GoogleMeetSpace {
+  google_meet_space_id Int                @id @default(autoincrement())
+  session_id           Int                @unique
+  meeting_uri          String
+  meeting_code         String?
+  MeetingTranscript    MeetingTranscript?
+  Session              Session            @relation(fields: [session_id], references: [session_id])
+}
+
 model MeetingTranscript {
-  transcript_id Int       @id @default(autoincrement())
-  document_id   Int?      @unique
-  session_id    Int       @unique
-  Document      Document? @relation(fields: [document_id], references: [document_id])
-  Session       Session   @relation(fields: [session_id], references: [session_id])
+  transcript_id        Int             @id @default(autoincrement())
+  document_id          Int?            @unique
+  session_id           Int             @unique
+  google_meet_space_id Int             @unique
+  fetch_status         FetchStatus     @default(PENDING)
+  fetch_error          String?
+  Document             Document?       @relation(fields: [document_id], references: [document_id])
+  GoogleMeetSpace      GoogleMeetSpace @relation(fields: [google_meet_space_id], references: [google_meet_space_id])
+  Session              Session         @relation(fields: [session_id], references: [session_id])
 }
 
 model PayAdjustment {
@@ -102,21 +153,22 @@ model Payment {
 }
 
 model Person {
-  person_id                            Int                 @id @default(autoincrement())
+  person_id                            Int                       @id @default(autoincrement())
   name                                 String
-  email                                String              @unique
-  phone                                String              @unique @db.VarChar(15)
-  username                             String              @unique
+  email                                String                    @unique
+  phone                                String                    @unique @db.VarChar(15)
+  username                             String                    @unique
   password                             String
-  reschedules                          Int                 @default(0)
-  clerk_id                             String?             @unique
+  reschedules                          Int                       @default(0)
+  clerk_id                             String?                   @unique
   Admin                                Admin?
   Advisor                              Advisor?
+  Availability                         Availability?
   Document                             Document[]
   GoogleCalendarConnection             GoogleCalendarConnection?
-  Payment_Payment_approved_byToPerson  Payment[]           @relation("Payment_approved_byToPerson")
-  Payment_Payment_recipient_idToPerson Payment[]           @relation("Payment_recipient_idToPerson")
-  Payment_Payment_sender_idToPerson    Payment[]           @relation("Payment_sender_idToPerson")
+  Payment_Payment_approved_byToPerson  Payment[]                 @relation("Payment_approved_byToPerson")
+  Payment_Payment_recipient_idToPerson Payment[]                 @relation("Payment_recipient_idToPerson")
+  Payment_Payment_sender_idToPerson    Payment[]                 @relation("Payment_sender_idToPerson")
   Schedule                             Schedule?
   SessionAttendants                    SessionAttendants[]
   Student                              Student?
@@ -146,11 +198,10 @@ model Session {
   session_id          Int                 @id @default(autoincrement())
   schedule_id         Int
   session_date        DateTime
-  meeting_url         String?
-  meeting_password    String?
   session_description String?
   session_duration    Int?
   completed           Boolean             @default(false)
+  GoogleMeetSpace     GoogleMeetSpace?
   MeetingTranscript   MeetingTranscript?
   Reminder            Reminder[]
   Schedule            Schedule            @relation(fields: [schedule_id], references: [schedule_id])
@@ -229,6 +280,13 @@ model Tutor {
 enum EntryReason {
   TUTOR_PAY
   ADVISOR_PAY
+}
+
+enum FetchStatus {
+  PENDING
+  FETCHING
+  COMPLETED
+  FAILED
 }
 
 enum PaymentReason {

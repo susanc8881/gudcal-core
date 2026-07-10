@@ -11,7 +11,7 @@ export const siteConfig: SiteConfig = {
   ogImage: `${site_url}/_static/og.jpg`,
   links: {
     twitter: "https://x.com/timchosen",
-    github: "https://github.com/gudlab/gudcal-core",
+    github: "https://github.com/susanc8881/gudcal-core",
   },
   mailSupport: "support@gudcal.com",
 };
@@ -39,7 +39,7 @@ export const footerLinks: SidebarNavItem[] = [
       { title: "Documentation", href: "/docs" },
       { title: "API Reference", href: "/docs/api" },
       { title: "MCP Server", href: "/docs/mcp" },
-      { title: "GitHub", href: "https://github.com/gudlab/gudcal-core" },
+      { title: "GitHub", href: "https://github.com/susanc8881/gudcal-core" },
     ],
   },
   {

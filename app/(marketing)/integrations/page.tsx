@@ -185,7 +185,7 @@ export default function IntegrationsPage() {
             Read the Docs
           </Link>
           <Link
-            href="https://github.com/gudlab/gudcal-core"
+            href="https://github.com/susanc8881/gudcal-core"
             target="_blank"
             rel="noreferrer"
             className={cn(
@@ -233,7 +233,7 @@ export default function IntegrationsPage() {
         </p>
         <div className="mt-6">
           <Link
-            href="https://github.com/gudlab/gudcal-core/issues"
+            href="https://github.com/susanc8881/gudcal-core/issues"
             target="_blank"
             rel="noreferrer"
             className={cn(

@@ -28,7 +28,7 @@ export async function GET(req: Request) {
 
     const fontSize = heading.length > 80 ? "60px" : "80px"
 
-    const githubName = "gudlab";
+    const githubName = "susanc8881";
 
     return new ImageResponse(
       (
@@ -123,7 +123,7 @@ export async function GET(req: Request) {
                   stroke-linejoin="round"
                 />
               </svg>
-              <div tw="flex ml-2">github.com/gudlab/gudcal-core</div>
+              <div tw="flex ml-2">github.com/susanc8881/gudcal-core</div>
             </div>
           </div>
         </div>
